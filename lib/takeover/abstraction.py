@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2017 sqlmap developers (http://sqlmap.org/)
-See the file 'doc/COPYING' for copying permission
+Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+See the file 'LICENSE' for copying permission
 """
 
 import sys
@@ -26,7 +26,6 @@ from lib.request import inject
 from lib.takeover.udf import UDF
 from lib.takeover.web import Web
 from lib.takeover.xp_cmdshell import XP_cmdshell
-
 
 class Abstraction(Web, UDF, XP_cmdshell):
     """
@@ -172,9 +171,9 @@ class Abstraction(Web, UDF, XP_cmdshell):
                 inject.goStacked(expression)
 
         # TODO: add support for PostgreSQL
-        #elif Backend.isDbms(DBMS.PGSQL):
-        #    expression = getSQLSnippet(DBMS.PGSQL, "configure_dblink", ENABLE="1")
-        #    inject.goStacked(expression)
+        # elif Backend.isDbms(DBMS.PGSQL):
+        #     expression = getSQLSnippet(DBMS.PGSQL, "configure_dblink", ENABLE="1")
+        #     inject.goStacked(expression)
 
     def initEnv(self, mandatory=True, detailed=False, web=False, forceInit=False):
         self._initRunAs()

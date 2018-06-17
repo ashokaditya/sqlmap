@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2017 sqlmap developers (http://sqlmap.org/)
-See the file 'doc/COPYING' for copying permission
+Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+See the file 'LICENSE' for copying permission
 """
 
 import sys
@@ -36,7 +36,6 @@ warnings.filterwarnings(action="ignore", category=DeprecationWarning)
 from lib.core.data import logger
 
 try:
-    from lib.controller.controller import start
     from lib.core.common import banner
     from lib.core.common import checkIntegrity
     from lib.core.common import createGithubIssue
@@ -58,15 +57,13 @@ try:
     from lib.core.exception import SqlmapUserQuitException
     from lib.core.option import initOptions
     from lib.core.option import init
-    from lib.core.profiling import profile
+    from lib.core.patch import dirtyPatches
     from lib.core.settings import GIT_PAGE
     from lib.core.settings import IS_WIN
     from lib.core.settings import LEGAL_DISCLAIMER
     from lib.core.settings import THREAD_FINALIZATION_TIMEOUT
     from lib.core.settings import UNICODE_ENCODING
     from lib.core.settings import VERSION
-    from lib.core.testing import smokeTest
-    from lib.core.testing import liveTest
     from lib.parse.cmdline import cmdLineParser
 except KeyboardInterrupt:
     errMsg = "user aborted"
@@ -112,13 +109,13 @@ def checkEnvironment():
         for _ in ("SqlmapBaseException", "SqlmapShellQuitException", "SqlmapSilentQuitException", "SqlmapUserQuitException"):
             globals()[_] = getattr(sys.modules["lib.core.exception"], _)
 
-
 def main():
     """
     Main function of sqlmap when running from command line.
     """
 
     try:
+        dirtyPatches()
         checkEnvironment()
         setPaths(modulePath())
         banner()
@@ -144,22 +141,28 @@ def main():
 
         init()
 
-        if conf.profile:
-            profile()
-        elif conf.smokeTest:
-            smokeTest()
-        elif conf.liveTest:
-            liveTest()
-        else:
-            try:
-                start()
-            except thread.error as ex:
-                if "can't start new thread" in getSafeExString(ex):
-                    errMsg = "unable to start new threads. Please check OS (u)limits"
-                    logger.critical(errMsg)
-                    raise SystemExit
-                else:
-                    raise
+        if not conf.updateAll:
+            # Postponed imports (faster start)
+            if conf.profile:
+                from lib.core.profiling import profile
+                profile()
+            elif conf.smokeTest:
+                from lib.core.testing import smokeTest
+                smokeTest()
+            elif conf.liveTest:
+                from lib.core.testing import liveTest
+                liveTest()
+            else:
+                from lib.controller.controller import start
+                try:
+                    start()
+                except thread.error as ex:
+                    if "can't start new thread" in getSafeExString(ex):
+                        errMsg = "unable to start new threads. Please check OS (u)limits"
+                        logger.critical(errMsg)
+                        raise SystemExit
+                    else:
+                        raise
 
     except SqlmapUserQuitException:
         errMsg = "user quit"
@@ -252,8 +255,26 @@ def main():
                 logger.error(errMsg)
                 raise SystemExit
 
+            elif "Violation of BIDI" in excMsg:
+                errMsg = "invalid URL (violation of Bidi IDNA rule - RFC 5893)"
+                logger.error(errMsg)
+                raise SystemExit
+
             elif "_mkstemp_inner" in excMsg:
                 errMsg = "there has been a problem while accessing temporary files"
+                logger.error(errMsg)
+                raise SystemExit
+
+            elif all(_ in excMsg for _ in ("twophase", "sqlalchemy")):
+                errMsg = "please update the 'sqlalchemy' package (>= 1.1.11) "
+                errMsg += "(Reference: https://qiita.com/tkprof/items/7d7b2d00df9c5f16fffe)"
+                logger.error(errMsg)
+                raise SystemExit
+
+            elif "must be pinned buffer, not bytearray" in excMsg:
+                errMsg = "error occurred at Python interpreter which "
+                errMsg += "is fixed in 2.7.x. Please update accordingly "
+                errMsg += "(Reference: https://bugs.python.org/issue8104)"
                 logger.error(errMsg)
                 raise SystemExit
 
@@ -284,7 +305,15 @@ def main():
                 logger.error(errMsg)
                 raise SystemExit
 
-            elif "valueStack.pop" in excMsg and kb.get("dumpKeyboardInterrupt"):
+            elif "url = url.strip()" in excMsg:
+                dataToStdout(excMsg)
+                print
+                errMsg = "please contact 'miroslav@sqlmap.org' with details for this issue "
+                errMsg += "as he is trying to reproduce it for long time"
+                logger.error(errMsg)
+                raise SystemExit
+
+            elif kb.get("dumpKeyboardInterrupt"):
                 raise SystemExit
 
             elif any(_ in excMsg for _ in ("Broken pipe",)):
@@ -368,3 +397,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+else:
+    # cancelling postponed imports (because of Travis CI checks)
+    from lib.controller.controller import start

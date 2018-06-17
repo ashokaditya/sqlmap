@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2017 sqlmap developers (http://sqlmap.org/)
-See the file 'doc/COPYING' for copying permission
+Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+See the file 'LICENSE' for copying permission
 """
 
 import re
@@ -165,7 +165,7 @@ class Users:
 
             if Backend.isDbms(DBMS.MYSQL):
                 for user in users:
-                    parsedUser = re.search("[\047]*(.*?)[\047]*\@", user)
+                    parsedUser = re.search(r"['\"]?(.*?)['\"]?\@", user)
 
                     if parsedUser:
                         users[users.index(user)] = parsedUser.groups()[0]
@@ -220,7 +220,7 @@ class Users:
 
                 if Backend.isDbms(DBMS.MYSQL):
                     for user in users:
-                        parsedUser = re.search("[\047]*(.*?)[\047]*\@", user)
+                        parsedUser = re.search(r"['\"]?(.*?)['\"]?\@", user)
 
                         if parsedUser:
                             users[users.index(user)] = parsedUser.groups()[0]
@@ -307,9 +307,9 @@ class Users:
 
         if not kb.data.cachedUsersPasswords:
             errMsg = "unable to retrieve the password hashes for the "
-            errMsg += "database users (probably because the session "
-            errMsg += "user has no read privileges over the relevant "
-            errMsg += "system database table)"
+            errMsg += "database users (probably because the DBMS "
+            errMsg += "current user has no read privileges over the relevant "
+            errMsg += "system database table(s))"
             logger.error(errMsg)
         else:
             for user in kb.data.cachedUsersPasswords:
@@ -349,7 +349,7 @@ class Users:
 
             if Backend.isDbms(DBMS.MYSQL):
                 for user in users:
-                    parsedUser = re.search("[\047]*(.*?)[\047]*\@", user)
+                    parsedUser = re.search(r"['\"]?(.*?)['\"]?\@", user)
 
                     if parsedUser:
                         users[users.index(user)] = parsedUser.groups()[0]
@@ -463,7 +463,7 @@ class Users:
 
                 if Backend.isDbms(DBMS.MYSQL):
                     for user in users:
-                        parsedUser = re.search("[\047]*(.*?)[\047]*\@", user)
+                        parsedUser = re.search(r"['\"]?(.*?)['\"]?\@", user)
 
                         if parsedUser:
                             users[users.index(user)] = parsedUser.groups()[0]

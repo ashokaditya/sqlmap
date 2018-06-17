@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2017 sqlmap developers (http://sqlmap.org/)
-See the file 'doc/COPYING' for copying permission
+Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+See the file 'LICENSE' for copying permission
 """
 
 import re
@@ -76,7 +76,10 @@ def _oneShotErrorUse(expression, field=None, chunkTest=False):
         current = MAX_ERROR_CHUNK_LENGTH
         while current >= MIN_ERROR_CHUNK_LENGTH:
             testChar = str(current % 10)
-            testQuery = "SELECT %s('%s',%d)" % ("REPEAT" if Backend.isDbms(DBMS.MYSQL) else "REPLICATE", testChar, current)
+
+            testQuery = "%s('%s',%d)" % ("REPEAT" if Backend.isDbms(DBMS.MYSQL) else "REPLICATE", testChar, current)
+            testQuery = "SELECT %s" % (agent.hexConvertField(testQuery) if conf.hexConvert else testQuery)
+
             result = unArrayizeValue(_oneShotErrorUse(testQuery, chunkTest=True))
 
             if (result or "").startswith(testChar):
@@ -130,20 +133,23 @@ def _oneShotErrorUse(expression, field=None, chunkTest=False):
 
                 # Parse the returned page to get the exact error-based
                 # SQL injection output
-                output = reduce(lambda x, y: x if x is not None else y, (\
-                        extractRegexResult(check, page), \
-                        extractRegexResult(check, threadData.lastHTTPError[2] if wasLastResponseHTTPError() else None), \
-                        extractRegexResult(check, listToStrValue([headers[header] for header in headers if header.lower() != HTTP_HEADER.URI.lower()] if headers else None)), \
-                        extractRegexResult(check, threadData.lastRedirectMsg[1] if threadData.lastRedirectMsg and threadData.lastRedirectMsg[0] == threadData.lastRequestUID else None)), \
-                        None)
+                output = reduce(lambda x, y: x if x is not None else y, (
+                    extractRegexResult(check, page),
+                    extractRegexResult(check, threadData.lastHTTPError[2] if wasLastResponseHTTPError() else None),
+                    extractRegexResult(check, listToStrValue((headers[header] for header in headers if header.lower() != HTTP_HEADER.URI.lower()) if headers else None)),
+                    extractRegexResult(check, threadData.lastRedirectMsg[1] if threadData.lastRedirectMsg and threadData.lastRedirectMsg[0] == threadData.lastRequestUID else None)),
+                    None
+                )
 
                 if output is not None:
                     output = getUnicode(output)
                 else:
-                    trimmed = extractRegexResult(trimcheck, page) \
-                        or extractRegexResult(trimcheck, threadData.lastHTTPError[2] if wasLastResponseHTTPError() else None) \
-                        or extractRegexResult(trimcheck, listToStrValue([headers[header] for header in headers if header.lower() != HTTP_HEADER.URI.lower()] if headers else None)) \
-                        or extractRegexResult(trimcheck, threadData.lastRedirectMsg[1] if threadData.lastRedirectMsg and threadData.lastRedirectMsg[0] == threadData.lastRequestUID else None)
+                    trimmed = (
+                        extractRegexResult(trimcheck, page) or
+                        extractRegexResult(trimcheck, threadData.lastHTTPError[2] if wasLastResponseHTTPError() else None) or
+                        extractRegexResult(trimcheck, listToStrValue((headers[header] for header in headers if header.lower() != HTTP_HEADER.URI.lower()) if headers else None)) or
+                        extractRegexResult(trimcheck, threadData.lastRedirectMsg[1] if threadData.lastRedirectMsg and threadData.lastRedirectMsg[0] == threadData.lastRequestUID else None)
+                    )
 
                     if trimmed:
                         if not chunkTest:
@@ -305,12 +311,7 @@ def errorUse(expression, dump=False):
     # entry at a time
     # NOTE: we assume that only queries that get data from a table can
     # return multiple entries
-    if (dump and (conf.limitStart or conf.limitStop)) or (" FROM " in \
-       expression.upper() and ((Backend.getIdentifiedDbms() not in FROM_DUMMY_TABLE) \
-       or (Backend.getIdentifiedDbms() in FROM_DUMMY_TABLE and not \
-       expression.upper().endswith(FROM_DUMMY_TABLE[Backend.getIdentifiedDbms()]))) \
-       and ("(CASE" not in expression.upper() or ("(CASE" in expression.upper() and "WHEN use" in expression))) \
-       and not re.search(SQL_SCALAR_REGEX, expression, re.I):
+    if (dump and (conf.limitStart or conf.limitStop)) or (" FROM " in expression.upper() and ((Backend.getIdentifiedDbms() not in FROM_DUMMY_TABLE) or (Backend.getIdentifiedDbms() in FROM_DUMMY_TABLE and not expression.upper().endswith(FROM_DUMMY_TABLE[Backend.getIdentifiedDbms()]))) and ("(CASE" not in expression.upper() or ("(CASE" in expression.upper() and "WHEN use" in expression))) and not re.search(SQL_SCALAR_REGEX, expression, re.I):
         expression, limitCond, topLimit, startLimit, stopLimit = agent.limitCondition(expression, dump)
 
         if limitCond:
@@ -330,7 +331,7 @@ def errorUse(expression, dump=False):
                 else:
                     stopLimit = int(count)
 
-                    infoMsg = "the SQL query used returns "
+                    infoMsg = "used SQL query returns "
                     infoMsg += "%d entries" % stopLimit
                     logger.info(infoMsg)
 
@@ -413,7 +414,7 @@ def errorUse(expression, dump=False):
                                 break
 
                             if output and isListLike(output) and len(output) == 1:
-                                output = output[0]
+                                output = unArrayizeValue(output)
 
                             with kb.locks.value:
                                 index = None
@@ -445,7 +446,7 @@ def errorUse(expression, dump=False):
         value = _errorFields(expression, expressionFields, expressionFieldsList)
 
     if value and isListLike(value) and len(value) == 1 and isinstance(value[0], basestring):
-        value = value[0]
+        value = unArrayizeValue(value)
 
     duration = calculateDeltaSeconds(start)
 

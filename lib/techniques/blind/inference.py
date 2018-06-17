@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2017 sqlmap developers (http://sqlmap.org/)
-See the file 'doc/COPYING' for copying permission
+Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+See the file 'LICENSE' for copying permission
 """
 
 import re
@@ -39,7 +39,6 @@ from lib.core.settings import CHAR_INFERENCE_MARK
 from lib.core.settings import INFERENCE_BLANK_BREAK
 from lib.core.settings import INFERENCE_UNKNOWN_CHAR
 from lib.core.settings import INFERENCE_GREATER_CHAR
-from lib.core.settings import INFERENCE_GREATER_EQUALS_CHAR
 from lib.core.settings import INFERENCE_EQUALS_CHAR
 from lib.core.settings import INFERENCE_MARKER
 from lib.core.settings import INFERENCE_NOT_EQUALS_CHAR
@@ -69,6 +68,9 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
     partialValue = u""
     finalValue = None
     retrievedLength = 0
+
+    if payload is None:
+        return 0, None
 
     if charsetType is None and conf.charset:
         asciiTbl = sorted(set(ord(_) for _ in conf.charset))
@@ -111,7 +113,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
 
         if partialValue:
             firstChar = len(partialValue)
-        elif "LENGTH(" in expression.upper() or "LEN(" in expression.upper():
+        elif re.search(r"(?i)\b(LENGTH|LEN)\(", expression):
             firstChar = 0
         elif (kb.fileReadMode or dump) and conf.firstChar is not None and (isinstance(conf.firstChar, int) or (isinstance(conf.firstChar, basestring) and conf.firstChar.isdigit())):
             firstChar = int(conf.firstChar) - 1
@@ -122,7 +124,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
         else:
             firstChar = 0
 
-        if "LENGTH(" in expression.upper() or "LEN(" in expression.upper():
+        if re.search(r"(?i)\b(LENGTH|LEN)\(", expression):
             lastChar = 0
         elif dump and conf.lastChar is not None and (isinstance(conf.lastChar, int) or (isinstance(conf.lastChar, basestring) and conf.lastChar.isdigit())):
             lastChar = int(conf.lastChar)
@@ -188,7 +190,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
             with hintlock:
                 hintValue = kb.hintValue
 
-            if hintValue is not None and len(hintValue) >= idx:
+            if payload is not None and hintValue is not None and len(hintValue) >= idx:
                 if Backend.getIdentifiedDbms() in (DBMS.SQLITE, DBMS.ACCESS, DBMS.MAXDB, DBMS.DB2):
                     posValue = hintValue[idx - 1]
                 else:
@@ -224,7 +226,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
 
             result = not Request.queryPage(forgedPayload, timeBasedCompare=timeBasedCompare, raise404=False)
 
-            if result and timeBasedCompare:
+            if result and timeBasedCompare and kb.injection.data[kb.technique].trueCode:
                 result = threadData.lastCode == kb.injection.data[kb.technique].trueCode
                 if not result:
                     warnMsg = "detected HTTP code '%s' in validation phase is differing from expected '%s'" % (threadData.lastCode, kb.injection.data[kb.technique].trueCode)
@@ -344,7 +346,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
                     if result:
                         minValue = posValue
 
-                        if type(charTbl) != xrange:
+                        if not isinstance(charTbl, xrange):
                             charTbl = charTbl[position:]
                         else:
                             # xrange() - extended virtual charset used for memory/space optimization
@@ -352,7 +354,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
                     else:
                         maxValue = posValue
 
-                        if type(charTbl) != xrange:
+                        if not isinstance(charTbl, xrange):
                             charTbl = charTbl[:position]
                         else:
                             charTbl = xrange(charTbl[0], charTbl[position])
@@ -391,7 +393,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
                                         if timeBasedCompare:
                                             if kb.adjustTimeDelay is not ADJUST_TIME_DELAY.DISABLE:
                                                 conf.timeSec += 1
-                                                warnMsg = "increasing time delay to %d second%s " % (conf.timeSec, 's' if conf.timeSec > 1 else '')
+                                                warnMsg = "increasing time delay to %d second%s" % (conf.timeSec, 's' if conf.timeSec > 1 else '')
                                                 logger.warn(warnMsg)
 
                                             if kb.adjustTimeDelay is ADJUST_TIME_DELAY.YES:
@@ -462,18 +464,15 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
                     threadData = getCurrentThreadData()
 
                     while kb.threadContinue:
-                        kb.locks.index.acquire()
+                        with kb.locks.index:
+                            if threadData.shared.index[0] - firstChar >= length:
+                                return
 
-                        if threadData.shared.index[0] - firstChar >= length:
-                            kb.locks.index.release()
-                            return
-
-                        threadData.shared.index[0] += 1
-                        currentCharIndex = threadData.shared.index[0]
-                        kb.locks.index.release()
+                            threadData.shared.index[0] += 1
+                            currentCharIndex = threadData.shared.index[0]
 
                         if kb.threadContinue:
-                            charStart = time.time()
+                            start = time.time()
                             val = getChar(currentCharIndex, asciiTbl, not(charsetType is None and conf.charset))
                             if val is None:
                                 val = INFERENCE_UNKNOWN_CHAR
@@ -486,7 +485,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
 
                         if kb.threadContinue:
                             if showEta:
-                                progress.progress(time.time() - charStart, threadData.shared.index[0])
+                                progress.progress(calculateDeltaSeconds(start), threadData.shared.index[0])
                             elif conf.verbose >= 1:
                                 startCharIndex = 0
                                 endCharIndex = 0
@@ -554,7 +553,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
 
             while True:
                 index += 1
-                charStart = time.time()
+                start = time.time()
 
                 # Common prediction feature (a.k.a. "good samaritan")
                 # NOTE: to be used only when multi-threading is not set for
@@ -579,7 +578,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
                         # Did we have luck?
                         if result:
                             if showEta:
-                                progress.progress(time.time() - charStart, len(commonValue))
+                                progress.progress(calculateDeltaSeconds(start), len(commonValue))
                             elif conf.verbose in (1, 2) or conf.api:
                                 dataToStdout(filterControlChars(commonValue[index - 1:]))
 
@@ -615,7 +614,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
                     # If we had no luck with commonValue and common charset,
                     # use the returned other charset
                     if not val:
-                        val = getChar(index, otherCharset, otherCharset==asciiTbl)
+                        val = getChar(index, otherCharset, otherCharset == asciiTbl)
                 else:
                     val = getChar(index, asciiTbl, not(charsetType is None and conf.charset))
 
@@ -629,7 +628,7 @@ def bisection(payload, expression, length=None, charsetType=None, firstChar=None
                 threadData.shared.value = partialValue = partialValue + val
 
                 if showEta:
-                    progress.progress(time.time() - charStart, index)
+                    progress.progress(calculateDeltaSeconds(start), index)
                 elif conf.verbose in (1, 2) or conf.api:
                     dataToStdout(filterControlChars(val))
 

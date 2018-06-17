@@ -1,17 +1,15 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2017 sqlmap developers (http://sqlmap.org/)
-See the file 'doc/COPYING' for copying permission
+Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+See the file 'LICENSE' for copying permission
 """
 
-import os
 import string
 
 from lib.core.enums import PRIORITY
-from lib.core.common import singleTimeWarnMessage
 
-__priority__ = PRIORITY.LOWEST
+__priority__ = PRIORITY.NORMAL
 
 def tamper(payload, **kwargs):
     """

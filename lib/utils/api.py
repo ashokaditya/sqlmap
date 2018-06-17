@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Copyright (c) 2006-2017 sqlmap developers (http://sqlmap.org/)
-See the file 'doc/COPYING' for copying permission
+Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+See the file 'LICENSE' for copying permission
 """
 
 import contextlib
@@ -23,6 +23,7 @@ from lib.core.common import dataToStdout
 from lib.core.common import getSafeExString
 from lib.core.common import saveConfig
 from lib.core.common import unArrayizeValue
+from lib.core.convert import base64encode
 from lib.core.convert import hexencode
 from lib.core.convert import dejsonize
 from lib.core.convert import jsonize
@@ -44,7 +45,6 @@ from lib.core.settings import RESTAPI_DEFAULT_ADDRESS
 from lib.core.settings import RESTAPI_DEFAULT_PORT
 from lib.core.subprocessng import Popen
 from lib.parse.cmdline import cmdLineParser
-from thirdparty.bottle.bottle import abort
 from thirdparty.bottle.bottle import error as return_error
 from thirdparty.bottle.bottle import get
 from thirdparty.bottle.bottle import hook
@@ -94,7 +94,7 @@ class Database(object):
                 else:
                     self.cursor.execute(statement)
             except sqlite3.OperationalError, ex:
-                if not "locked" in getSafeExString(ex):
+                if "locked" not in getSafeExString(ex):
                     raise
             else:
                 break
@@ -103,22 +103,9 @@ class Database(object):
             return self.cursor.fetchall()
 
     def init(self):
-        self.execute("CREATE TABLE logs("
-                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                  "taskid INTEGER, time TEXT, "
-                  "level TEXT, message TEXT"
-                  ")")
-
-        self.execute("CREATE TABLE data("
-                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                  "taskid INTEGER, status INTEGER, "
-                  "content_type INTEGER, value TEXT"
-                  ")")
-
-        self.execute("CREATE TABLE errors("
-                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                    "taskid INTEGER, error TEXT"
-                    ")")
+        self.execute("CREATE TABLE logs(id INTEGER PRIMARY KEY AUTOINCREMENT, taskid INTEGER, time TEXT, level TEXT, message TEXT)")
+        self.execute("CREATE TABLE data(id INTEGER PRIMARY KEY AUTOINCREMENT, taskid INTEGER, status INTEGER, content_type INTEGER, value TEXT)")
+        self.execute("CREATE TABLE errors(id INTEGER PRIMARY KEY AUTOINCREMENT, taskid INTEGER, error TEXT)")
 
 class Task(object):
     def __init__(self, taskid, remote_addr):
@@ -172,6 +159,8 @@ class Task(object):
             self.process = Popen(["python", "sqlmap.py", "--api", "-c", configFile], shell=False, close_fds=not IS_WIN)
         elif os.path.exists(os.path.join(os.getcwd(), "sqlmap.py")):
             self.process = Popen(["python", "sqlmap.py", "--api", "-c", configFile], shell=False, cwd=os.getcwd(), close_fds=not IS_WIN)
+        elif os.path.exists(os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), "sqlmap.py")):
+            self.process = Popen(["python", "sqlmap.py", "--api", "-c", configFile], shell=False, cwd=os.path.join(os.path.abspath(os.path.dirname(sys.argv[0]))), close_fds=not IS_WIN)
         else:
             self.process = Popen(["sqlmap", "--api", "-c", configFile], shell=False, close_fds=not IS_WIN)
 
@@ -209,7 +198,6 @@ class Task(object):
 
     def engine_has_terminated(self):
         return isinstance(self.engine_get_returncode(), int)
-
 
 # Wrapper functions for sqlmap engine
 class StdDbOut(object):
@@ -277,7 +265,7 @@ def setRestAPILog():
             conf.databaseCursor = Database(conf.database)
             conf.databaseCursor.connect("client")
         except sqlite3.OperationalError, ex:
-            raise SqlmapConnectionException, "%s ('%s')" % (ex, conf.database)
+            raise SqlmapConnectionException("%s ('%s')" % (ex, conf.database))
 
         # Set a logging handler that writes log messages to a IPC database
         logger.removeHandler(LOGGER_HANDLER)
@@ -510,9 +498,7 @@ def scan_stop(taskid):
     Stop a scan
     """
 
-    if (taskid not in DataStore.tasks or
-            DataStore.tasks[taskid].engine_process() is None or
-            DataStore.tasks[taskid].engine_has_terminated()):
+    if (taskid not in DataStore.tasks or DataStore.tasks[taskid].engine_process() is None or DataStore.tasks[taskid].engine_has_terminated()):
         logger.warning("[%s] Invalid task ID provided to scan_stop()" % taskid)
         return jsonize({"success": False, "message": "Invalid task ID"})
 
@@ -527,9 +513,7 @@ def scan_kill(taskid):
     Kill a scan
     """
 
-    if (taskid not in DataStore.tasks or
-            DataStore.tasks[taskid].engine_process() is None or
-            DataStore.tasks[taskid].engine_has_terminated()):
+    if (taskid not in DataStore.tasks or DataStore.tasks[taskid].engine_process() is None or DataStore.tasks[taskid].engine_has_terminated()):
         logger.warning("[%s] Invalid task ID provided to scan_kill()" % taskid)
         return jsonize({"success": False, "message": "Invalid task ID"})
 
@@ -584,7 +568,6 @@ def scan_data(taskid):
     logger.debug("[%s] Retrieved scan data and error messages" % taskid)
     return jsonize({"success": True, "data": json_data_message, "error": json_errors_message})
 
-
 # Functions to handle scans' logs
 @get("/scan/<taskid>/log/<start>/<end>")
 def scan_log_limited(taskid, start, end):
@@ -612,7 +595,6 @@ def scan_log_limited(taskid, start, end):
     logger.debug("[%s] Retrieved scan log messages subset" % taskid)
     return jsonize({"success": True, "log": json_log_messages})
 
-
 @get("/scan/<taskid>/log")
 def scan_log(taskid):
     """
@@ -631,7 +613,6 @@ def scan_log(taskid):
 
     logger.debug("[%s] Retrieved scan log messages" % taskid)
     return jsonize({"success": True, "log": json_log_messages})
-
 
 # Function to handle files inside the output directory
 @get("/download/<taskid>/<target>/<filename:path>")
@@ -654,11 +635,10 @@ def download(taskid, target, filename):
         logger.debug("[%s] Retrieved content of file %s" % (taskid, target))
         with open(path, 'rb') as inf:
             file_content = inf.read()
-        return jsonize({"success": True, "file": file_content.encode("base64")})
+        return jsonize({"success": True, "file": base64encode(file_content)})
     else:
         logger.warning("[%s] File does not exist %s" % (taskid, target))
         return jsonize({"success": False, "message": "File does not exist"})
-
 
 def server(host=RESTAPI_DEFAULT_ADDRESS, port=RESTAPI_DEFAULT_PORT, adapter=RESTAPI_DEFAULT_ADAPTER, username=None, password=None):
     """
@@ -722,7 +702,7 @@ def _client(url, options=None):
         headers = {"Content-Type": "application/json"}
 
         if DataStore.username or DataStore.password:
-            headers["Authorization"] = "Basic %s" % ("%s:%s" % (DataStore.username or "", DataStore.password or "")).encode("base64").strip()
+            headers["Authorization"] = "Basic %s" % base64encode("%s:%s" % (DataStore.username or "", DataStore.password or ""))
 
         req = urllib2.Request(url, data, headers)
         response = urllib2.urlopen(req)
@@ -860,7 +840,7 @@ def client(host=RESTAPI_DEFAULT_ADDRESS, port=RESTAPI_DEFAULT_PORT, username=Non
             return
 
         elif command in ("help", "?"):
-            msg =  "help           Show this help message\n"
+            msg = "help           Show this help message\n"
             msg += "new ARGS       Start a new scan task with provided arguments (e.g. 'new -u \"http://testphp.vulnweb.com/artists.php?artist=1\"')\n"
             msg += "use TASKID     Switch current context to different task (e.g. 'use c04d8c5c7582efb4')\n"
             msg += "data           Retrieve and show data for current task\n"

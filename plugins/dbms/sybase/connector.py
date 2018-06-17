@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2017 sqlmap developers (http://sqlmap.org/)
-See the file 'doc/COPYING' for copying permission
+Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+See the file 'LICENSE' for copying permission
 """
 
 try:
@@ -43,6 +43,8 @@ class Connector(GenericConnector):
             self.connector = pymssql.connect(host="%s:%d" % (self.hostname, self.port), user=self.user, password=self.password, database=self.db, login_timeout=conf.timeout, timeout=conf.timeout)
         except (pymssql.Error, _mssql.MssqlDatabaseException), msg:
             raise SqlmapConnectionException(msg)
+        except ValueError:
+            raise SqlmapConnectionException
 
         self.initCursor()
         self.printConnected()

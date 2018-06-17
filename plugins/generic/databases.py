@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Copyright (c) 2006-2017 sqlmap developers (http://sqlmap.org/)
-See the file 'doc/COPYING' for copying permission
+Copyright (c) 2006-2018 sqlmap developers (http://sqlmap.org/)
+See the file 'LICENSE' for copying permission
 """
 
 from lib.core.agent import agent
@@ -23,6 +23,7 @@ from lib.core.common import pushValue
 from lib.core.common import randomStr
 from lib.core.common import readInput
 from lib.core.common import safeSQLIdentificatorNaming
+from lib.core.common import singleTimeLogMessage
 from lib.core.common import singleTimeWarnMessage
 from lib.core.common import unArrayizeValue
 from lib.core.common import unsafeSQLIdentificatorNaming
@@ -31,6 +32,7 @@ from lib.core.data import kb
 from lib.core.data import logger
 from lib.core.data import paths
 from lib.core.data import queries
+from lib.core.decorators import stackedmethod
 from lib.core.dicts import FIREBIRD_TYPES
 from lib.core.dicts import INFORMIX_TYPES
 from lib.core.enums import CHARSET_TYPE
@@ -288,6 +290,24 @@ class Databases:
                     db = safeSQLIdentificatorNaming(db)
                     table = safeSQLIdentificatorNaming(unArrayizeValue(table), True)
 
+                    if conf.getComments:
+                        _ = queries[Backend.getIdentifiedDbms()].table_comment
+                        if hasattr(_, "query"):
+                            if Backend.getIdentifiedDbms() in (DBMS.ORACLE, DBMS.DB2):
+                                query = _.query % (unsafeSQLIdentificatorNaming(db.upper()), unsafeSQLIdentificatorNaming(table.upper()))
+                            else:
+                                query = _.query % (unsafeSQLIdentificatorNaming(db), unsafeSQLIdentificatorNaming(table))
+
+                            comment = unArrayizeValue(inject.getValue(query, blind=False, time=False))
+                            if not isNoneValue(comment):
+                                infoMsg = "retrieved comment '%s' for table '%s' " % (comment, unsafeSQLIdentificatorNaming(table))
+                                infoMsg += "in database '%s'" % unsafeSQLIdentificatorNaming(db)
+                                logger.info(infoMsg)
+                        else:
+                            warnMsg = "on %s it is not " % Backend.getIdentifiedDbms()
+                            warnMsg += "possible to get column comments"
+                            singleTimeWarnMessage(warnMsg)
+
                     if db not in kb.data.cachedTables:
                         kb.data.cachedTables[db] = [table]
                     else:
@@ -298,7 +318,11 @@ class Databases:
                 if conf.excludeSysDbs and db in self.excludeDbsList:
                     infoMsg = "skipping system database '%s'" % unsafeSQLIdentificatorNaming(db)
                     logger.info(infoMsg)
+                    continue
 
+                if conf.exclude and db in conf.exclude.split(','):
+                    infoMsg = "skipping database '%s'" % unsafeSQLIdentificatorNaming(db)
+                    singleTimeLogMessage(infoMsg)
                     continue
 
                 infoMsg = "fetching number of tables for "
@@ -346,6 +370,24 @@ class Databases:
                         kb.hintValue = table
                         table = safeSQLIdentificatorNaming(table, True)
                         tables.append(table)
+
+                        if conf.getComments:
+                            _ = queries[Backend.getIdentifiedDbms()].table_comment
+                            if hasattr(_, "query"):
+                                if Backend.getIdentifiedDbms() in (DBMS.ORACLE, DBMS.DB2):
+                                    query = _.query % (unsafeSQLIdentificatorNaming(db.upper()), unsafeSQLIdentificatorNaming(table.upper()))
+                                else:
+                                    query = _.query % (unsafeSQLIdentificatorNaming(db), unsafeSQLIdentificatorNaming(table))
+
+                                comment = unArrayizeValue(inject.getValue(query, union=False, error=False))
+                                if not isNoneValue(comment):
+                                    infoMsg = "retrieved comment '%s' for table '%s' " % (comment, unsafeSQLIdentificatorNaming(table))
+                                    infoMsg += "in database '%s'" % unsafeSQLIdentificatorNaming(db)
+                                    logger.info(infoMsg)
+                            else:
+                                warnMsg = "on %s it is not " % Backend.getIdentifiedDbms()
+                                warnMsg += "possible to get column comments"
+                                singleTimeWarnMessage(warnMsg)
 
                 if tables:
                     kb.data.cachedTables[db] = tables
@@ -395,7 +437,7 @@ class Databases:
             if Backend.getIdentifiedDbms() in (DBMS.ORACLE, DBMS.DB2, DBMS.HSQLDB):
                 conf.db = conf.db.upper()
 
-            if  ',' in conf.db:
+            if ',' in conf.db:
                 errMsg = "only one database name is allowed when enumerating "
                 errMsg += "the tables' columns"
                 raise SqlmapMissingMandatoryOptionException(errMsg)
@@ -410,8 +452,8 @@ class Databases:
         else:
             colList = []
 
-        if conf.excludeCol:
-            colList = [_ for _ in colList if _ not in conf.excludeCol.split(',')]
+        if conf.exclude:
+            colList = [_ for _ in colList if _ not in conf.exclude.split(',')]
 
         for col in colList:
             colList[colList.index(col)] = safeSQLIdentificatorNaming(col)
@@ -658,8 +700,7 @@ class Databases:
                     query += condQuery
 
                 elif Backend.isDbms(DBMS.MSSQL):
-                    query = rootQuery.blind.count % (conf.db, conf.db, \
-                        unsafeSQLIdentificatorNaming(tbl).split(".")[-1])
+                    query = rootQuery.blind.count % (conf.db, conf.db, unsafeSQLIdentificatorNaming(tbl).split(".")[-1])
                     query += condQuery.replace("[DB]", conf.db)
 
                 elif Backend.isDbms(DBMS.FIREBIRD):
@@ -758,8 +799,7 @@ class Databases:
                             elif Backend.getIdentifiedDbms() in (DBMS.ORACLE, DBMS.DB2):
                                 query = rootQuery.blind.query2 % (unsafeSQLIdentificatorNaming(tbl.upper()), column, unsafeSQLIdentificatorNaming(conf.db.upper()))
                             elif Backend.isDbms(DBMS.MSSQL):
-                                query = rootQuery.blind.query2 % (conf.db, conf.db, conf.db, conf.db, column, conf.db,
-                                                                conf.db, conf.db, unsafeSQLIdentificatorNaming(tbl).split(".")[-1])
+                                query = rootQuery.blind.query2 % (conf.db, conf.db, conf.db, conf.db, column, conf.db, conf.db, conf.db, unsafeSQLIdentificatorNaming(tbl).split(".")[-1])
                             elif Backend.isDbms(DBMS.FIREBIRD):
                                 query = rootQuery.blind.query2 % (unsafeSQLIdentificatorNaming(tbl), column)
                             elif Backend.isDbms(DBMS.INFORMIX):
@@ -803,6 +843,7 @@ class Databases:
 
         return kb.data.cachedColumns
 
+    @stackedmethod
     def getSchema(self):
         infoMsg = "enumerating database management system schema"
         logger.info(infoMsg)
@@ -818,10 +859,7 @@ class Databases:
             self.getTables()
 
             infoMsg = "fetched tables: "
-            infoMsg += ", ".join(["%s" % ", ".join("%s%s%s" % (unsafeSQLIdentificatorNaming(db), ".." if \
-                    Backend.isDbms(DBMS.MSSQL) or Backend.isDbms(DBMS.SYBASE) \
-                    else ".", unsafeSQLIdentificatorNaming(t)) for t in tbl) for db, tbl in \
-                    kb.data.cachedTables.items()])
+            infoMsg += ", ".join(["%s" % ", ".join("%s%s%s" % (unsafeSQLIdentificatorNaming(db), ".." if Backend.isDbms(DBMS.MSSQL) or Backend.isDbms(DBMS.SYBASE) else '.', unsafeSQLIdentificatorNaming(_)) for _ in tbl) for db, tbl in kb.data.cachedTables.items()])
             logger.info(infoMsg)
 
             for db, tables in kb.data.cachedTables.items():

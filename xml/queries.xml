@@ -14,7 +14,7 @@
         <limitstring query=" LIMIT "/>
         <order query="ORDER BY %s ASC"/>
         <count query="COUNT(%s)"/>
-        <comment query="-- " query2="/*" query3="#"/>
+        <comment query="-- -" query2="/*" query3="#"/>
         <substring query="MID((%s),%d,%d)"/>
         <concatenate query="CONCAT(%s,%s)"/>
         <case query="SELECT (CASE WHEN (%s) THEN 1 ELSE 0 END)"/>
@@ -711,7 +711,7 @@
             <inband query="SELECT table_schem FROM INFORMATION_SCHEMA.SYSTEM_SCHEMAS WHERE %s" condition="table_schem"/>
         </search_db>
         <search_table>
-            <blind query="SELECT DISTINCT(table_schem) FROM INFORMATION_SCHEMA.SYSTEM_TABLES WHERE %s" count="SELECT COUNT(DISTINCT(table_schem)) FROM INFORMATION_SCHEMA.SYSTEM_TABLES WHERE %s" condition="table_name" condition2="table_schem"/>
+            <blind query="SELECT DISTINCT(table_schem) FROM INFORMATION_SCHEMA.SYSTEM_TABLES WHERE %s" query2="SELECT DISTINCT(table_name) FROM INFORMATION_SCHEMA.SYSTEM_TABLES WHERE table_schem='%s'" count="SELECT COUNT(DISTINCT(table_schem)) FROM INFORMATION_SCHEMA.SYSTEM_TABLES WHERE %s" count2="SELECT COUNT(DISTINCT(table_name)) FROM INFORMATION_SCHEMA.SYSTEM_TABLES WHERE table_schem='%s'" condition="table_name" condition2="table_schem"/>
             <inband query="SELECT table_schem,table_name FROM INFORMATION_SCHEMA.SYSTEM_TABLES WHERE %s" condition="table_name" condition2="table_schem"/>
         </search_table>
         <search_column>
@@ -776,7 +776,7 @@
         </columns>
         <dump_table>
             <inband query="SELECT %s FROM %s:%s"/>
-            <blind query="SELECT SKIP %d LIMIT 1 %s FROM %s:%s ORDER BY %s" count="SELECT COUNT(*) FROM %s:%s"/>
+            <blind query="SELECT MIN(%s) FROM %s WHERE RTRIM(TO_CHAR(%s))>'%s'" query2="SELECT MAX(%s) FROM %s WHERE RTRIM(TO_CHAR(%s)) LIKE '%s'" count="SELECT COUNT(*) FROM %s:%s" count2="SELECT COUNT(DISTINCT %s) FROM %s"/>
         </dump_table>
         <search_db/>
         <search_table/>
